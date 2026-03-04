@@ -1,13 +1,13 @@
 {
   "name": "conversor-svg-png",
-  "version": "1.0.0",
-  "description": "Microservicio para convertir SVG a PNG",
+  "version": "2.0.0",
+  "description": "Microservicio con Puppeteer para convertir SVG (con HTML/CSS) a PNG",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "sharp": "^0.33.2"
+    "puppeteer": "^22.6.0"
   }
 }
