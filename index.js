@@ -32,6 +32,7 @@ app.post('/convertir', async (req, res) => {
 
         // 2. Envolvemos el SVG en un HTML básico
         // Esto asegura que los márgenes sean cero y se vea perfecto
+        // 2. Envolvemos el SVG en un HTML básico
         const htmlContent = `
             <!DOCTYPE html>
             <html>
@@ -39,6 +40,10 @@ app.post('/convertir', async (req, res) => {
                 <style>
                     body, html { margin: 0; padding: 0; background: transparent; }
                     svg { display: block; }
+                    /* ESTA ES LA MAGIA: Obligamos a usar la fuente de Emojis si la de texto falla */
+                    * { 
+                        font-family: 'Montserrat', 'Noto Color Emoji', sans-serif !important; 
+                    }
                 </style>
             </head>
             <body>
