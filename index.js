@@ -55,7 +55,10 @@ app.post('/convertir', async (req, res) => {
         // 3. Cargamos el código en la página
         // IMPORTANTE: waitUntil: 'networkidle0' obliga al navegador a ESPERAR 
         // hasta que todas las fotos de internet y fuentes (Google Fonts) se hayan descargado.
-        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        await page.setContent(htmlContent, { 
+            waitUntil: 'networkidle0',
+            timeout: 90000 // 90 segundos de espera máxima
+        });
 
         // 4. Buscamos el elemento SVG para tomarle la foto exacta a su tamaño
         const svgElement = await page.$('svg');
