@@ -2,9 +2,9 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const app = express();
 
-// Aceptamos los formatos que envía n8n
+// Aumentamos el límite de recepción para SVG pesados
 app.use(express.text({ type: '*/*', limit: '50mb' }));
-app.use(express.json({ limit: '50mb' })); 
+app.use(express.json({ limit: '50mb' }));
 
 app.post('/convertir', async (req, res) => {
     let browser;
@@ -21,8 +21,7 @@ app.post('/convertir', async (req, res) => {
             return res.status(400).send("No se detectó un código SVG válido.");
         }
 
-        // 1. Lanzamos el Google Chrome invisible (Puppeteer)
-        // Usamos parámetros especiales para que funcione bien en servidores en la nube como Render
+        // 1. Lanzamos el navegador
         browser = await puppeteer.launch({
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
@@ -30,20 +29,15 @@ app.post('/convertir', async (req, res) => {
         
         const page = await browser.newPage();
 
-        // 2. Envolvemos el SVG en un HTML básico
-        // Esto asegura que los márgenes sean cero y se vea perfecto
-        // 2. Envolvemos el SVG en un HTML básico
+        // 2. Preparamos el HTML
         const htmlContent = `
             <!DOCTYPE html>
             <html>
             <head>
                 <style>
-                    body, html { margin: 0; padding: 0; background: transparent; }
-                    svg { display: block; }
-                    /* ESTA ES LA MAGIA: Obligamos a usar la fuente de Emojis si la de texto falla */
-                    * { 
-                        font-family: 'Montserrat', 'Noto Color Emoji', sans-serif !important; 
-                    }
+                    body, html { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+                    svg { display: block; width: 100%; height: auto; }
+                    * { font-family: 'Montserrat', 'Noto Color Emoji', sans-serif !important; }
                 </style>
             </head>
             <body>
@@ -52,43 +46,57 @@ app.post('/convertir', async (req, res) => {
             </html>
         `;
 
-        // 3. Cargamos el código en la página
-        // IMPORTANTE: waitUntil: 'networkidle0' obliga al navegador a ESPERAR 
-        // hasta que todas las fotos de internet y fuentes (Google Fonts) se hayan descargado.
+        // 3. Cargamos el contenido (con el nuevo timeout de 90s)
         await page.setContent(htmlContent, { 
             waitUntil: 'networkidle0',
-            timeout: 90000 // 90 segundos de espera máxima
+            timeout: 90000 
         });
 
-        // 4. Buscamos el elemento SVG para tomarle la foto exacta a su tamaño
-        const svgElement = await page.$('svg');
-        
-        if (!svgElement) {
-            throw new Error("No se pudo renderizar el SVG en el navegador invisible.");
-        }
+        // 4. MAGIA: Detectamos las dimensiones reales del SVG
+        const dimensions = await page.evaluate(() => {
+            const svg = document.querySelector('svg');
+            if (!svg) return null;
+            
+            // Intentamos obtener el ancho y alto de los atributos o del viewBox
+            const bbox = svg.getBBox();
+            const width = parseInt(svg.getAttribute('width')) || bbox.width || 1080;
+            const height = parseInt(svg.getAttribute('height')) || bbox.height || 1080;
+            
+            return { width, height };
+        });
 
-        // 5. Tomamos la captura de pantalla en formato PNG
+        if (!dimensions) throw new Error("No se pudo encontrar el elemento SVG.");
+
+        // 5. Ajustamos el Viewport con Alta Densidad (deviceScaleFactor: 2)
+        // Esto elimina el pixelado
+        await page.setViewport({
+            width: dimensions.width,
+            height: dimensions.height,
+            deviceScaleFactor: 2 // Calidad Retina
+        });
+
+        // 6. Capturamos la zona exacta del SVG
+        const svgElement = await page.$('svg');
         const pngBuffer = await svgElement.screenshot({
             type: 'png',
-            omitBackground: true // Mantiene el fondo transparente si el SVG no tiene fondo
+            omitBackground: true
         });
 
         await browser.close();
 
-        // 6. Enviamos la imagen a n8n lista y con nombre
+        // 7. Respuesta a n8n
         res.set('Content-Type', 'image/png');
-        res.set('Content-Disposition', 'attachment; filename="imagen_generada.png"');
+        res.set('Content-Disposition', `attachment; filename="diseno_${dimensions.width}x${dimensions.height}.png"`);
         res.send(pngBuffer);
 
     } catch (error) {
-        // Si hay error, cerramos el navegador para no consumir memoria
         if (browser) await browser.close();
-        console.error("Error detallado:", error);
+        console.error("Error en conversión:", error);
         res.status(500).send(`Error interno: ${error.message}`);
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Servidor Puppeteer activo en puerto ${PORT}`);
+    console.log(`Servidor de alta definición activo en puerto ${PORT}`);
 });
