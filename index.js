@@ -21,10 +21,16 @@ app.post('/convertir', async (req, res) => {
             return res.status(400).send("No se detectó un código SVG válido.");
         }
 
-        // 1. Lanzamos el navegador
+        // 1. Lanzamos el navegador con SUPERPODERES (Apagamos la seguridad CORS)
         browser = await puppeteer.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--disable-dev-shm-usage',
+                '--disable-web-security', // <--- MAGIA 1: Permite cargar fotos de internet en about:blank
+                '--allow-file-access-from-files' // <--- MAGIA 2: Evita bloqueos locales
+            ]
         });
         
         const page = await browser.newPage();
@@ -46,18 +52,20 @@ app.post('/convertir', async (req, res) => {
             </html>
         `;
 
-        // 3. Cargamos el contenido (con el nuevo timeout de 90s)
+        // 3. Cargamos el contenido
         await page.setContent(htmlContent, { 
             waitUntil: 'networkidle0',
             timeout: 90000 
         });
 
-        // 4. MAGIA: Detectamos las dimensiones reales del SVG
+        // <--- MAGIA 3: Obligamos a Puppeteer a esperar que Montserrat se dibuje antes de tomar la foto
+        await page.evaluateHandle('document.fonts.ready');
+
+        // 4. Detectamos las dimensiones reales del SVG
         const dimensions = await page.evaluate(() => {
             const svg = document.querySelector('svg');
             if (!svg) return null;
             
-            // Intentamos obtener el ancho y alto de los atributos o del viewBox
             const bbox = svg.getBBox();
             const width = parseInt(svg.getAttribute('width')) || bbox.width || 1080;
             const height = parseInt(svg.getAttribute('height')) || bbox.height || 1080;
@@ -68,12 +76,14 @@ app.post('/convertir', async (req, res) => {
         if (!dimensions) throw new Error("No se pudo encontrar el elemento SVG.");
 
         // 5. Ajustamos el Viewport con Alta Densidad (deviceScaleFactor: 2)
-        // Esto elimina el pixelado
         await page.setViewport({
             width: dimensions.width,
             height: dimensions.height,
-            deviceScaleFactor: 2 // Calidad Retina
+            deviceScaleFactor: 2 
         });
+
+        // Agregamos una mínima pausa técnica para asegurar que el viewport acomode el Flexbox
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // 6. Capturamos la zona exacta del SVG
         const svgElement = await page.$('svg');
